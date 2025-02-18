@@ -1,14 +1,12 @@
 from fastapi import FastAPI, HTTPException, Request, Response
-from pydantic import HttpUrl
 import pandas as pd
 from server.dto import Request, Response
 import logging
 from contextlib import asynccontextmanager
 import joblib
+from features_extractor import FeatureExtractor
 
-class FeatureExtractor:
-    def extract():
-        return pd.DataFrame()
+
 
 
 # Настройка логирования
@@ -23,12 +21,17 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Starting up the server...")
     try:
-        app.state.model = joblib.load("model.pkl")
-        app.state.feature_extractor = FeatureExtractor()
+        app.state.model = joblib.load("resources\model.pkl")
         logger.info("Model loaded")
     except Exception as e:
         logger.error(f"Failed to load the model: {e}", exc_info=True)
         app.state.model = None
+    try:
+        app.state.feature_extractor = FeatureExtractor(history_path="resources/history.tsv", users_path="resources/users.tsv")
+        logger.info("Feature extractor loaded")
+    except Exception as e:
+        logger.error(f"Failed to load the feature extractor: {e}", exc_info=True)
+        app.state.feature_extractor = None
     yield
     logger.info("Shutting down the server...")
 
@@ -46,15 +49,16 @@ async def predict(data: Request):
     try:
         logger.info(f"Received data: {data}")
 
-        data_df = pd.DataFrame(data.model_dump())
+        data_df = pd.DataFrame([data.model_dump()])
 
-        features = app.state.feature_extractor.extract(data_df)
+        features = app.state.feature_extractor.get_all_features(data_df)
         prediction = model.predict(features)
+        logger.info(f"Prediction: {prediction}")
 
         response = Response(
-            at_least_one=prediction['at_least_one'],
-            at_least_two=prediction['at_least_two'],
-            at_least_three=prediction['at_least_three']
+            at_least_one=prediction[0][0],
+            at_least_two=prediction[0][1],
+            at_least_three=prediction[0][2]
         )
         logger.info(f"Sending response: {response}")
 
